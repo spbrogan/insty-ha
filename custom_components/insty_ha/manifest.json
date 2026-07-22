@@ -1,0 +1,12 @@
+{
+  "domain": "insty_ha",
+  "name": "Insty Router",
+  "codeowners": ["@spbrogan"],
+  "config_flow": true,
+  "documentation": "https://github.com/spbrogan/insty-ha",
+  "issue_tracker": "https://github.com/spbrogan/insty-ha/issues",
+  "iot_class": "local_polling",
+  "integration_type": "hub",
+  "requirements": [],
+  "version": "0.1.0"
+}

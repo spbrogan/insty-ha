@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from html.parser import HTMLParser
 from typing import Any
 
 import aiohttp
@@ -17,6 +18,7 @@ from .const import (
     STANDBY_ENDPOINT,
     STANDBY_STATES,
     SWITCH_SIM_ENDPOINT,
+    UPDATE_ENDPOINT,
     VERSION_ENDPOINT,
 )
 
@@ -45,6 +47,59 @@ async def async_fetch_standby(session: aiohttp.ClientSession, host: str) -> str:
     if value not in STANDBY_STATES:
         raise ValueError(f"Unexpected standby status: {value!r}")
     return STANDBY_STATES[value]
+
+
+class _ModemDetailsParser(HTMLParser):
+    """Extract the labeled modem details table from the update page."""
+
+    _labels = {
+        "Modem IMEI:": "imei",
+        "Current SIM ICCID:": "iccid",
+        "Current SIM IMSI:": "imsi",
+        "Current APN Applied:": "apn",
+    }
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.details: dict[str, str | None] = {}
+        self._row: list[str] = []
+        self._cell: list[str] | None = None
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag == "tr":
+            self._row = []
+            self._cell = None
+        elif tag in ("td", "th"):
+            self._cell = []
+
+    def handle_data(self, data: str) -> None:
+        if self._cell is not None:
+            self._cell.append(data)
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag in ("td", "th") and self._cell is not None:
+            self._row.append("".join(self._cell).strip())
+            self._cell = None
+        elif tag == "tr" and len(self._row) == 2:
+            label = " ".join(self._row[0].split())
+            if key := self._labels.get(label):
+                if key in self.details:
+                    raise ValueError(f"Duplicate modem detail field: {key}")
+                value = self._row[1]
+                self.details[key] = None if value in ("", "-", "--") else value
+
+
+async def async_fetch_modem_details(
+    session: aiohttp.ClientSession, host: str
+) -> dict[str, str | None]:
+    """Read identifiers and the applied APN without invoking update actions."""
+    page = await _async_fetch_text(session, host, UPDATE_ENDPOINT)
+    parser = _ModemDetailsParser()
+    parser.feed(page)
+    parser.close()
+    if parser.details.keys() != {"imei", "iccid", "imsi", "apn"}:
+        raise ValueError("Update page is missing expected modem detail fields")
+    return parser.details
 
 
 async def async_fetch_sim_profile(

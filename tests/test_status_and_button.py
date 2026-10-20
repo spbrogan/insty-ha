@@ -254,6 +254,8 @@ class StatusEntityTests(unittest.IsolatedAsyncioTestCase):
         coordinator.host = "router"
         coordinator._session = MagicMock()
         with (
+            patch("custom_components.insty_ha.coordinator.async_fetch_modem_details",
+                  new_callable=AsyncMock, return_value={}),
             patch("custom_components.insty_ha.coordinator.async_fetch_signal",
                   new_callable=AsyncMock, side_effect=[{"mode": "LTE"}, {"mode": "LTE"}]),
             patch("custom_components.insty_ha.coordinator.async_fetch_version",

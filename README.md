@@ -39,6 +39,17 @@ and exposes every value in each signal update as a Home Assistant sensor.
      from `getcsq?checkstandby`.
    Individual status failures are logged and do not invalidate other successful
    values. Text sensors appear after their first successful response.
+7. **IMEI**, **ICCID**, **IMSI**, and **APN** read the modem details table from
+   `/cgi-bin/insty/update` every polling cycle. These are text sensors, preserving
+   leading zeros in identifiers. APN is the currently applied APN, not a saved
+   profile setting. The existing ICCID sensor keeps its ID and prefers the signal
+   stream value, using the update page only when that value is missing or empty.
+   IMEI and APN are diagnostic sensors. ICCID and IMSI retain their existing
+   disabled-by-default setting; enable them in the device's entity list if needed.
+   Empty table values are unknown. Request or page-format failures are logged and
+   make page-only values unavailable without interrupting signal sensors. Sensors
+   are added automatically after the first successful read; no update or other
+   advanced tool action is invoked.
 
 ### Reboot Modem button
 

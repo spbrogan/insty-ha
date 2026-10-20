@@ -22,6 +22,13 @@ from custom_components.insty_ha.sensor import (
 
 class ConnectionTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
+        details = patch(
+            "custom_components.insty_ha.coordinator.async_fetch_modem_details",
+            new_callable=AsyncMock,
+            return_value={},
+        )
+        details.start()
+        self.addCleanup(details.stop)
         self.status_data = {
             "modem_reachable": True,
             "active_sim_profile": "Test SIM",

@@ -13,6 +13,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 
 from .api import (
     async_fetch_modem,
+    async_fetch_modem_details,
     async_fetch_signal,
     async_fetch_sim_profile,
     async_fetch_standby,
@@ -40,7 +41,7 @@ class InstyDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
 
     async def _async_update_data(self) -> dict[str, Any]:
-        """Fetch a signal snapshot and the OnChip version from the router."""
+        """Fetch signal, status, and diagnostic values from the router."""
         try:
             data = await async_fetch_signal(self._session, self.host)
         except (aiohttp.ClientError, TimeoutError) as err:
@@ -58,6 +59,15 @@ class InstyDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 data[key] = await fetch(self._session, self.host)
             except (aiohttp.ClientError, TimeoutError, ValueError) as err:
                 _LOGGER.warning("Unable to fetch %s from %s: %s", key, self.host, err)
+
+        try:
+            details = await async_fetch_modem_details(self._session, self.host)
+        except (aiohttp.ClientError, TimeoutError, ValueError) as err:
+            _LOGGER.warning("Unable to fetch modem details from %s: %s", self.host, err)
+        else:
+            for key, value in details.items():
+                if key != "iccid" or not data.get("iccid"):
+                    data[key] = value
         return data
 
     async def async_reboot_modem(self) -> None:

@@ -215,6 +215,18 @@ SENSOR_DESCRIPTIONS: dict[str, InstySensorEntityDescription] = {
         icon="mdi:card-account-details",
         entity_registry_enabled_default=False,
     ),
+    "imei": InstySensorEntityDescription(
+        key="imei",
+        name="IMEI",
+        icon="mdi:identifier",
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    "apn": InstySensorEntityDescription(
+        key="apn",
+        name="APN",
+        icon="mdi:access-point-network",
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
     "imsiname": InstySensorEntityDescription(
         key="imsiname",
         name="IMSI Name",

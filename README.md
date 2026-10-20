@@ -29,6 +29,31 @@ and exposes every value in each signal update as a Home Assistant sensor.
    router's underlying OS version. If this request fails, a warning is logged
    and only this sensor becomes unavailable; signal sensors continue updating.
    The sensor is created automatically after the first successful version read.
+6. Additional dashboard status checks refresh each polling cycle:
+   - **Modem Reachable**: a diagnostic connectivity binary sensor using
+     `getcsq?checkmodem`. An unsuccessful request is unavailable, not disconnected.
+   - **Active SIM Profile**: the name (or ICCID fallback) of the profile marked
+     `button_label: "Active"` by `/cgi-bin/insty/esim`, matching the dashboard.
+     No active profile is shown as unknown.
+   - **Standby Status**: `no_standby_plan`, `active`, `standby`, or `activating`,
+     from `getcsq?checkstandby`.
+   Individual status failures are logged and do not invalidate other successful
+   values. Text sensors appear after their first successful response.
+
+### Reboot Modem button
+
+The **Reboot Modem** configuration button sends a single
+`GET /cgi-bin/insty/getcsq?reboot`, exactly like the dashboard's Reboot button.
+It restarts the modem, not the entire router, and does not perform a factory
+reset. This interrupts cellular service. Normal polling detects recovery;
+temporary unavailable sensors during reboot are expected.
+
+The button remains usable when signal polling fails. Request failures are
+reported to Home Assistant and are not automatically retried: a dropped
+connection can mean the modem already started rebooting. Check its status
+before retrying. No reboot is performed during setup or polling.
+
+No speed tests are run or scheduled by this integration.
 
 ### Upgrading from the old API
 

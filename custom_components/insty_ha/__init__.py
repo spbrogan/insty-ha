@@ -9,7 +9,7 @@ from homeassistant.core import HomeAssistant
 from .const import CONF_HOST, DOMAIN
 from .coordinator import InstyDataUpdateCoordinator
 
-PLATFORMS: list[Platform] = [Platform.SENSOR]
+PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.BINARY_SENSOR, Platform.BUTTON]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

@@ -10,6 +10,17 @@ DOMAIN = "insty_ha"
 DEFAULT_HOST = "192.168.225.1"
 API_ENDPOINT = "/cgi-bin/insty/signal_stream"
 VERSION_ENDPOINT = "/cgi-bin/insty/getcsq?version"
+MODEM_ENDPOINT = "/cgi-bin/insty/getcsq?checkmodem"
+STANDBY_ENDPOINT = "/cgi-bin/insty/getcsq?checkstandby"
+SIM_ENDPOINT = "/cgi-bin/insty/esim"
+REBOOT_ENDPOINT = "/cgi-bin/insty/getcsq?reboot"
+
+STANDBY_STATES = {
+    "0": "no_standby_plan",
+    "1": "active",
+    "2": "standby",
+    "3": "activating",
+}
 
 # Configuration keys.
 CONF_HOST = "host"

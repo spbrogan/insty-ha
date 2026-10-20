@@ -8,7 +8,74 @@ from typing import Any
 
 import aiohttp
 
-from .const import API_ENDPOINT, DEFAULT_TIMEOUT, VERSION_ENDPOINT
+from .const import (
+    API_ENDPOINT,
+    DEFAULT_TIMEOUT,
+    MODEM_ENDPOINT,
+    REBOOT_ENDPOINT,
+    SIM_ENDPOINT,
+    STANDBY_ENDPOINT,
+    STANDBY_STATES,
+    VERSION_ENDPOINT,
+)
+
+
+async def _async_fetch_text(
+    session: aiohttp.ClientSession, host: str, endpoint: str
+) -> str:
+    """Read a text response with the standard request timeout."""
+    async with asyncio.timeout(DEFAULT_TIMEOUT):
+        async with session.get(f"http://{host}{endpoint}") as response:
+            response.raise_for_status()
+            return (await response.text()).strip()
+
+
+async def async_fetch_modem(session: aiohttp.ClientSession, host: str) -> bool:
+    """Read whether the modem is reachable."""
+    value = await _async_fetch_text(session, host, MODEM_ENDPOINT)
+    if value not in ("0", "1"):
+        raise ValueError(f"Unexpected modem status: {value!r}")
+    return value == "1"
+
+
+async def async_fetch_standby(session: aiohttp.ClientSession, host: str) -> str:
+    """Read the dashboard's on-demand service state."""
+    value = await _async_fetch_text(session, host, STANDBY_ENDPOINT)
+    if value not in STANDBY_STATES:
+        raise ValueError(f"Unexpected standby status: {value!r}")
+    return STANDBY_STATES[value]
+
+
+async def async_fetch_sim_profile(
+    session: aiohttp.ClientSession, host: str
+) -> str | None:
+    """Read the live SIM label using the dashboard's Active button marker."""
+    async with asyncio.timeout(DEFAULT_TIMEOUT):
+        async with session.get(f"http://{host}{SIM_ENDPOINT}") as response:
+            response.raise_for_status()
+            payload = await response.json(content_type=None)
+    if not isinstance(payload, dict) or payload.get("status") != "success":
+        raise ValueError("SIM profile request did not return success")
+    profiles = payload.get("profiles")
+    if not isinstance(profiles, list):
+        raise ValueError("SIM profiles must be a list")
+    active_name = None
+    for profile in profiles:
+        if not isinstance(profile, dict):
+            raise ValueError("SIM profile must be an object")
+        if profile.get("button_label") == "Active":
+            name = profile.get("name") or profile.get("iccid")
+            if not isinstance(name, str) or not name.strip():
+                raise ValueError("Active SIM profile must have a name or ICCID")
+            if active_name is not None:
+                raise ValueError("Multiple SIM profiles are marked Active")
+            active_name = name.strip()
+    return active_name
+
+
+async def async_reboot_modem(session: aiohttp.ClientSession, host: str) -> None:
+    """Send the same one-shot GET request as the dashboard's Reboot button."""
+    await _async_fetch_text(session, host, REBOOT_ENDPOINT)
 
 
 async def async_fetch_version(session: aiohttp.ClientSession, host: str) -> str:

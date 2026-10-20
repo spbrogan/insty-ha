@@ -24,7 +24,7 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN
+from .const import DOMAIN, STANDBY_STATES
 from .coordinator import InstyDataUpdateCoordinator
 
 
@@ -67,6 +67,18 @@ class InstySensorEntityDescription(SensorEntityDescription):
 
 
 SENSOR_DESCRIPTIONS: dict[str, InstySensorEntityDescription] = {
+    "active_sim_profile": InstySensorEntityDescription(
+        key="active_sim_profile",
+        name="Active SIM Profile",
+        icon="mdi:sim",
+    ),
+    "standby_status": InstySensorEntityDescription(
+        key="standby_status",
+        name="Standby Status",
+        device_class=SensorDeviceClass.ENUM,
+        options=list(STANDBY_STATES.values()),
+        icon="mdi:pause-circle-outline",
+    ),
     "firmware_version": InstySensorEntityDescription(
         key="firmware_version",
         name="OnChip Firmware Version",
@@ -241,7 +253,7 @@ async def async_setup_entry(
     @callback
     def _add_new_sensors() -> None:
         """Create sensors for any keys not seen before."""
-        new_keys = set(coordinator.data or {}) - known_keys
+        new_keys = set(coordinator.data or {}) - known_keys - {"modem_reachable"}
         if not new_keys:
             return
         known_keys.update(new_keys)

@@ -21,6 +21,25 @@ from custom_components.insty_ha.sensor import (
 
 
 class ConnectionTests(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        self.status_data = {
+            "modem_reachable": True,
+            "active_sim_profile": "Test SIM",
+            "standby_status": "no_standby_plan",
+        }
+        for name, key in (
+            ("async_fetch_modem", "modem_reachable"),
+            ("async_fetch_sim_profile", "active_sim_profile"),
+            ("async_fetch_standby", "standby_status"),
+        ):
+            mocked = patch(
+                f"custom_components.insty_ha.coordinator.{name}",
+                new_callable=AsyncMock,
+                return_value=self.status_data[key],
+            )
+            mocked.start()
+            self.addCleanup(mocked.stop)
+
     async def test_config_and_coordinator_use_same_reader(self):
         flow = InstyConfigFlow()
         flow.hass = MagicMock()
@@ -52,7 +71,7 @@ class ConnectionTests(unittest.IsolatedAsyncioTestCase):
             self.assertIsNone(await flow._async_test_connection("router"))
             self.assertEqual(
                 await coordinator._async_update_data(),
-                {**data, "firmware_version": "20260729"},
+                {**data, **self.status_data, "firmware_version": "20260729"},
             )
             setup_fetch.assert_awaited_once_with(coordinator._session, "router")
             poll_fetch.assert_awaited_once_with(coordinator._session, "router")
@@ -82,10 +101,13 @@ class ConnectionTests(unittest.IsolatedAsyncioTestCase):
                     with self.assertLogs(
                         "custom_components.insty_ha.coordinator", level="WARNING"
                     ):
-                        self.assertEqual(await coordinator._async_update_data(), {"mode": "LTE"})
+                        self.assertEqual(
+                            await coordinator._async_update_data(),
+                            {"mode": "LTE", **self.status_data},
+                        )
                     self.assertEqual(
                         await coordinator._async_update_data(),
-                        {"mode": "LTE", "firmware_version": "20260729"},
+                        {"mode": "LTE", **self.status_data, "firmware_version": "20260729"},
                     )
 
     async def test_config_and_polling_report_errors(self):
@@ -194,7 +216,7 @@ class DynamicSensorTests(unittest.IsolatedAsyncioTestCase):
     async def test_new_fields_are_added_once_after_updates(self):
         coordinator = MagicMock()
         coordinator.host = "router"
-        coordinator.data = {"mode": "LTE", "iccid": "test-sim"}
+        coordinator.data = {"mode": "LTE", "iccid": "test-sim", "modem_reachable": True}
         entry = MagicMock()
         entry.entry_id = "existing-entry"
         hass = MagicMock()

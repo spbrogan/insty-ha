@@ -53,6 +53,20 @@ reported to Home Assistant and are not automatically retried: a dropped
 connection can mean the modem already started rebooting. Check its status
 before retrying. No reboot is performed during setup or polling.
 
+### Switch SIM Slot button
+
+The **Switch SIM Slot** configuration button sends a single
+`GET /cgi-bin/insty/switchsim`, matching the dashboard's Alternate SIM Slot
+control. It switches to the alternate slot rather than selecting a specific
+numbered slot. This interrupts cellular service; normal polling updates the
+SIM slot sensor and detects recovery.
+
+The button remains usable when signal polling fails. Request failures are
+reported to Home Assistant and are not automatically retried: a dropped
+connection can mean the switch already started. Check the SIM slot before
+retrying, since another press could switch it back. No SIM switch is performed
+during setup or polling.
+
 No speed tests are run or scheduled by this integration.
 
 ### Upgrading from the old API

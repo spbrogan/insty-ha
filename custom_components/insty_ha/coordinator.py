@@ -18,6 +18,7 @@ from .api import (
     async_fetch_standby,
     async_fetch_version,
     async_reboot_modem,
+    async_switch_sim,
 )
 from .const import DEFAULT_SCAN_INTERVAL, DOMAIN
 
@@ -62,3 +63,7 @@ class InstyDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     async def async_reboot_modem(self) -> None:
         """Request a modem reboot without retrying a potentially accepted action."""
         await async_reboot_modem(self._session, self.host)
+
+    async def async_switch_sim(self) -> None:
+        """Switch SIM slots without retrying a potentially accepted action."""
+        await async_switch_sim(self._session, self.host)

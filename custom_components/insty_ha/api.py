@@ -16,6 +16,7 @@ from .const import (
     SIM_ENDPOINT,
     STANDBY_ENDPOINT,
     STANDBY_STATES,
+    SWITCH_SIM_ENDPOINT,
     VERSION_ENDPOINT,
 )
 
@@ -76,6 +77,11 @@ async def async_fetch_sim_profile(
 async def async_reboot_modem(session: aiohttp.ClientSession, host: str) -> None:
     """Send the same one-shot GET request as the dashboard's Reboot button."""
     await _async_fetch_text(session, host, REBOOT_ENDPOINT)
+
+
+async def async_switch_sim(session: aiohttp.ClientSession, host: str) -> None:
+    """Send the dashboard's one-shot request to switch to the alternate SIM slot."""
+    await _async_fetch_text(session, host, SWITCH_SIM_ENDPOINT)
 
 
 async def async_fetch_version(session: aiohttp.ClientSession, host: str) -> str:

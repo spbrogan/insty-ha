@@ -1,4 +1,4 @@
-"""Dashboard-equivalent modem reboot action."""
+"""Dashboard-equivalent modem actions."""
 
 from __future__ import annotations
 
@@ -19,8 +19,12 @@ from .coordinator import InstyDataUpdateCoordinator
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
-    """Set up the reboot action."""
-    async_add_entities([InstyRebootModem(hass.data[DOMAIN][entry.entry_id], entry)])
+    """Set up the modem actions."""
+    coordinator = hass.data[DOMAIN][entry.entry_id]
+    async_add_entities([
+        InstyRebootModem(coordinator, entry),
+        InstySwitchSim(coordinator, entry),
+    ])
 
 
 class InstyRebootModem(ButtonEntity):
@@ -44,4 +48,28 @@ class InstyRebootModem(ButtonEntity):
             raise HomeAssistantError(
                 f"Could not confirm modem reboot request: {err}. "
                 "The modem may already be restarting; check its status before retrying."
+            ) from err
+
+
+class InstySwitchSim(ButtonEntity):
+    """Switch SIM slots, including when signal polling is unavailable."""
+
+    _attr_has_entity_name = True
+    _attr_name = "Switch SIM Slot"
+    _attr_icon = "mdi:sim"
+    _attr_entity_category = EntityCategory.CONFIG
+
+    def __init__(self, coordinator: InstyDataUpdateCoordinator, entry: ConfigEntry) -> None:
+        self.coordinator = coordinator
+        self._attr_unique_id = f"{entry.entry_id}_switch_sim"
+        self._attr_device_info = DeviceInfo(identifiers={(DOMAIN, entry.entry_id)})
+
+    async def async_press(self) -> None:
+        """Send one switch request and surface any failure to the user."""
+        try:
+            await self.coordinator.async_switch_sim()
+        except (aiohttp.ClientError, TimeoutError, ValueError) as err:
+            raise HomeAssistantError(
+                f"Could not confirm SIM slot switch request: {err}. "
+                "The SIM slot may already be switching; check its status before retrying."
             ) from err

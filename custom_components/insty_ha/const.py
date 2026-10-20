@@ -14,6 +14,7 @@ MODEM_ENDPOINT = "/cgi-bin/insty/getcsq?checkmodem"
 STANDBY_ENDPOINT = "/cgi-bin/insty/getcsq?checkstandby"
 SIM_ENDPOINT = "/cgi-bin/insty/esim"
 REBOOT_ENDPOINT = "/cgi-bin/insty/getcsq?reboot"
+SWITCH_SIM_ENDPOINT = "/cgi-bin/insty/switchsim"
 
 STANDBY_STATES = {
     "0": "no_standby_plan",

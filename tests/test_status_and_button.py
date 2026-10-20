@@ -1,11 +1,11 @@
-"""Read-only status and mocked reboot tests; never reboot a physical modem."""
+"""Read-only status and mocked action tests; never change a physical modem."""
 
 import asyncio
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import aiohttp
-from homeassistant.const import Platform
+from homeassistant.const import EntityCategory, Platform
 from homeassistant.exceptions import HomeAssistantError
 
 from custom_components.insty_ha import PLATFORMS
@@ -14,11 +14,17 @@ from custom_components.insty_ha.api import (
     async_fetch_sim_profile,
     async_fetch_standby,
     async_reboot_modem,
+    async_switch_sim,
 )
 from custom_components.insty_ha.binary_sensor import InstyModemReachable
-from custom_components.insty_ha.button import InstyRebootModem
+from custom_components.insty_ha.button import (
+    InstyRebootModem,
+    InstySwitchSim,
+    async_setup_entry,
+)
 from custom_components.insty_ha.const import (
     MODEM_ENDPOINT, REBOOT_ENDPOINT, SIM_ENDPOINT, STANDBY_ENDPOINT, STANDBY_STATES,
+    DOMAIN, SWITCH_SIM_ENDPOINT,
 )
 from custom_components.insty_ha.coordinator import InstyDataUpdateCoordinator
 from custom_components.insty_ha.sensor import InstySensor
@@ -97,6 +103,36 @@ class StatusApiTests(unittest.IsolatedAsyncioTestCase):
             await async_reboot_modem(session, "router")
         session.get.assert_called_once()
 
+    async def test_switch_sim_uses_exact_dashboard_get_once(self):
+        session, response = self.session(text="")
+        await async_switch_sim(session, "router")
+        session.get.assert_called_once_with(f"http://router{SWITCH_SIM_ENDPOINT}")
+        response.raise_for_status.assert_called_once()
+        response.__aexit__.assert_awaited_once()
+
+    async def test_switch_sim_http_error_is_not_retried(self):
+        session, response = self.session()
+        response.raise_for_status.side_effect = aiohttp.ClientResponseError(
+            MagicMock(), (), status=500
+        )
+        with self.assertRaises(aiohttp.ClientResponseError):
+            await async_switch_sim(session, "router")
+        session.get.assert_called_once_with(f"http://router{SWITCH_SIM_ENDPOINT}")
+        response.__aexit__.assert_awaited_once()
+
+    async def test_switch_sim_timeout_is_not_retried_and_closes_response(self):
+        session, response = self.session()
+
+        async def stalled():
+            await asyncio.Event().wait()
+
+        response.text.side_effect = stalled
+        with patch("custom_components.insty_ha.api.DEFAULT_TIMEOUT", 0.01):
+            with self.assertRaises(TimeoutError):
+                await async_switch_sim(session, "router")
+        session.get.assert_called_once_with(f"http://router{SWITCH_SIM_ENDPOINT}")
+        response.__aexit__.assert_awaited_once()
+
     async def test_text_request_timeout_closes_response(self):
         session, response = self.session()
 
@@ -115,6 +151,7 @@ class StatusEntityTests(unittest.IsolatedAsyncioTestCase):
         self.coordinator = MagicMock()
         self.coordinator.last_update_success = True
         self.coordinator.async_reboot_modem = AsyncMock()
+        self.coordinator.async_switch_sim = AsyncMock()
         self.coordinator.data = {
             "modem_reachable": False, "standby_status": "activating",
             "active_sim_profile": None,
@@ -145,6 +182,52 @@ class StatusEntityTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(button.unique_id, "entry_reboot_modem")
         await button.async_press()
         self.coordinator.async_reboot_modem.assert_awaited_once_with()
+
+    async def test_setup_adds_both_buttons_without_performing_actions(self):
+        hass = MagicMock()
+        hass.data = {DOMAIN: {"entry": self.coordinator}}
+        add_entities = MagicMock()
+        await async_setup_entry(hass, self.entry, add_entities)
+        add_entities.assert_called_once()
+        buttons = add_entities.call_args.args[0]
+        self.assertEqual([type(button) for button in buttons], [InstyRebootModem, InstySwitchSim])
+        self.coordinator.async_reboot_modem.assert_not_awaited()
+        self.coordinator.async_switch_sim.assert_not_awaited()
+
+    async def test_switch_sim_button_delegates_even_when_signal_unavailable(self):
+        self.coordinator.last_update_success = False
+        button = InstySwitchSim(self.coordinator, self.entry)
+        self.assertTrue(button.available)
+        self.assertEqual(button.unique_id, "entry_switch_sim")
+        self.assertEqual(button.name, "Switch SIM Slot")
+        self.assertEqual(button.entity_category, EntityCategory.CONFIG)
+        self.assertEqual(button.device_info["identifiers"], {(DOMAIN, "entry")})
+        await button.async_press()
+        self.coordinator.async_switch_sim.assert_awaited_once_with()
+        self.coordinator.async_reboot_modem.assert_not_awaited()
+
+    async def test_switch_sim_errors_are_visible_and_not_retried(self):
+        for error in (
+            TimeoutError("timeout"), aiohttp.ClientConnectionError("offline"),
+            ValueError("invalid response"),
+        ):
+            self.coordinator.async_switch_sim.reset_mock()
+            self.coordinator.async_switch_sim.side_effect = error
+            button = InstySwitchSim(self.coordinator, self.entry)
+            with self.assertRaisesRegex(HomeAssistantError, "may already be switching"):
+                await button.async_press()
+            self.coordinator.async_switch_sim.assert_awaited_once_with()
+
+    async def test_coordinator_delegates_switch_sim(self):
+        coordinator = object.__new__(InstyDataUpdateCoordinator)
+        coordinator.host = "router"
+        coordinator._session = MagicMock()
+        with patch(
+            "custom_components.insty_ha.coordinator.async_switch_sim",
+            new_callable=AsyncMock,
+        ) as switch:
+            await coordinator.async_switch_sim()
+            switch.assert_awaited_once_with(coordinator._session, "router")
 
     async def test_button_errors_are_visible_and_not_retried(self):
         for error in (TimeoutError("timeout"), aiohttp.ClientConnectionError("offline")):

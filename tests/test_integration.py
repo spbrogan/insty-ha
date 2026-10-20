@@ -3,14 +3,21 @@
 from __future__ import annotations
 
 import unittest
-from unittest.mock import AsyncMock, MagicMock, patch
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock, create_autospec, patch
 
 import aiohttp
 from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
 from homeassistant.const import EntityCategory
+from homeassistant.helpers.entity_registry import EntityRegistry, RegistryEntryDisabler
 from homeassistant.helpers.update_coordinator import UpdateFailed
 
 from custom_components.insty_ha.config_flow import InstyConfigFlow
+from custom_components.insty_ha import (
+    async_migrate_entry,
+    async_setup_entry as async_setup_integration,
+)
+from custom_components.insty_ha.api import normalize_signal
 from custom_components.insty_ha.const import DOMAIN
 from custom_components.insty_ha.coordinator import InstyDataUpdateCoordinator
 from custom_components.insty_ha.sensor import (
@@ -158,7 +165,8 @@ class SensorTests(unittest.TestCase):
             "lte_rsrp": -109,
             "lte_snr_db": 2.6,
             "nr5g_rsrp": None,
-            "lband": "B2<br>N77",
+            "connected_bands": ["B2", "N77"],
+            "connected_band_count": 2,
             "firmware_version": "20260729",
         }
         self.entry = MagicMock()
@@ -179,7 +187,8 @@ class SensorTests(unittest.TestCase):
                         SensorDeviceClass.SIGNAL_STRENGTH if power else None,
                     )
         self.assertEqual(SENSOR_DESCRIPTIONS["signal_percent"].native_unit_of_measurement, "%")
-        self.assertFalse(SENSOR_DESCRIPTIONS["iccid"].entity_registry_enabled_default)
+        for description in SENSOR_DESCRIPTIONS.values():
+            self.assertTrue(description.entity_registry_enabled_default)
 
     def test_numeric_zero_null_and_band_values(self):
         for key, expected in (
@@ -187,15 +196,28 @@ class SensorTests(unittest.TestCase):
             ("lte_rsrp", -109),
             ("lte_snr_db", 2.6),
             ("nr5g_rsrp", None),
-            ("lband", 2),
+            ("connected_band_count", 2),
         ):
             with self.subTest(key=key):
                 sensor = InstySensor(self.coordinator, self.entry, key)
                 self.assertEqual(sensor.native_value, expected)
                 self.assertTrue(sensor.available)
                 self.assertEqual(sensor.unique_id, f"existing-entry_{key}")
-        bands = InstySensor(self.coordinator, self.entry, "lband")
+        bands = InstySensor(self.coordinator, self.entry, "connected_band_count")
         self.assertEqual(bands.extra_state_attributes, {"bands": ["B2", "N77"]})
+
+    def test_connected_band_count_zero_missing_and_updated_attributes(self):
+        sensor = InstySensor(self.coordinator, self.entry, "connected_band_count")
+        self.coordinator.data.update(connected_bands=[], connected_band_count=0)
+        self.assertEqual(sensor.native_value, 0)
+        self.assertEqual(sensor.extra_state_attributes, {"bands": []})
+        self.assertTrue(sensor.available)
+        self.coordinator.data = {}
+        self.assertIsNone(sensor.native_value)
+        self.assertFalse(sensor.available)
+        self.coordinator.data = {"connected_band_count": 1, "connected_bands": ["N77"]}
+        self.assertEqual(sensor.native_value, 1)
+        self.assertEqual(sensor.extra_state_attributes, {"bands": ["N77"]})
 
     def test_missing_keys_and_failed_updates_are_unavailable(self):
         sensor = InstySensor(self.coordinator, self.entry, "lte_rsrp")
@@ -220,6 +242,35 @@ class SensorTests(unittest.TestCase):
 
 
 class DynamicSensorTests(unittest.IsolatedAsyncioTestCase):
+    async def test_signal_creates_only_canonical_sensors(self):
+        coordinator = MagicMock()
+        coordinator.host = "router"
+        coordinator.data = normalize_signal({
+            "mode": "LTE", "signal_percent": 40, "provider": "Test Network",
+            "sim_slot": 1, "lte": {"rssi": -75},
+        })
+        entry = MagicMock()
+        entry.entry_id = "entry"
+        hass = MagicMock()
+        hass.data = {DOMAIN: {entry.entry_id: coordinator}}
+        added = []
+        await async_setup_entry(hass, entry, added.extend)
+        listener = coordinator.async_add_listener.call_args.args[0]
+        listener()
+        self.assertEqual(
+            sorted(entity.unique_id for entity in added),
+            [
+                "entry_connected_band_count", "entry_lte_rssi", "entry_mode", "entry_provider",
+                "entry_signal_percent", "entry_sim_slot",
+            ],
+        )
+        self.assertEqual([entity.name for entity in added].count("SIM Slot"), 1)
+        for key in (
+            "slot", "cops", "rssi", "lband", "csq", "per", "rscp", "ecio",
+            "qtwr", "limsrv", "rnc_num", "imsiname", "initial_run",
+        ):
+            self.assertNotIn(key, SENSOR_DESCRIPTIONS)
+
     async def test_new_fields_are_added_once_after_updates(self):
         coordinator = MagicMock()
         coordinator.host = "router"
@@ -242,3 +293,144 @@ class DynamicSensorTests(unittest.IsolatedAsyncioTestCase):
             sorted(entity.unique_id for entity in added),
             ["existing-entry_iccid", "existing-entry_mode", "existing-entry_nr5g_rsrp"],
         )
+
+
+class MigrationTests(unittest.IsolatedAsyncioTestCase):
+    async def test_migration_removes_only_this_entries_obsolete_sensor_entities(self):
+        hass = MagicMock()
+        hass.data = {}
+        hass.config_entries.async_forward_entry_setups = AsyncMock()
+        entry = MagicMock()
+        entry.entry_id = "entry"
+        entry.version = 1
+        entry.data = {"host": "router"}
+        registry = create_autospec(EntityRegistry, instance=True)
+        obsolete_keys = (
+            "slot", "cops", "rssi", "lband", "csq", "per", "rscp", "ecio",
+            "qtwr", "limsrv", "rnc_num", "imsiname", "initial_run",
+        )
+        entities = [
+            SimpleNamespace(
+                entity_id=f"sensor.old_{key}", domain="sensor", platform=DOMAIN,
+                unique_id=f"entry_{key}",
+            )
+            for key in obsolete_keys
+        ]
+        entities.extend([
+            SimpleNamespace(
+                entity_id=f"sensor.keep_{key}", domain="sensor", platform=DOMAIN,
+                unique_id=f"entry_{key}", disabled_by=None,
+            )
+            for key in ("sim_slot", "provider", "lte_rssi", "iccid", "connected_band_count")
+        ])
+        entities.extend([
+            SimpleNamespace(
+                entity_id="sensor.other_entry", domain="sensor", platform=DOMAIN,
+                unique_id="other_slot",
+            ),
+            SimpleNamespace(
+                entity_id="sensor.other_integration", domain="sensor", platform="other",
+                unique_id="entry_slot",
+            ),
+            SimpleNamespace(
+                entity_id="button.other_domain", domain="button", platform=DOMAIN,
+                unique_id="entry_slot",
+            ),
+        ])
+        with (
+            patch("custom_components.insty_ha.er.async_get", return_value=registry),
+            patch("custom_components.insty_ha.er.async_entries_for_config_entry",
+                  return_value=entities) as entries,
+        ):
+            self.assertTrue(await async_migrate_entry(hass, entry))
+        entries.assert_called_once_with(registry, "entry")
+        self.assertEqual(
+            [call.args[0] for call in registry.async_remove.call_args_list],
+            [f"sensor.old_{key}" for key in obsolete_keys],
+        )
+        registry.async_update_entity.assert_not_called()
+        hass.config_entries.async_update_entry.assert_called_once_with(
+            entry, version=2, minor_version=1
+        )
+
+    async def test_migration_enables_identifiers_but_preserves_user_choices(self):
+        hass = MagicMock()
+        hass.data = {}
+        hass.config_entries.async_forward_entry_setups = AsyncMock()
+        entry = MagicMock()
+        entry.entry_id = "entry"
+        entry.version = 1
+        entry.data = {"host": "router"}
+        registry = create_autospec(EntityRegistry, instance=True)
+        entities = [
+            SimpleNamespace(
+                entity_id=f"sensor.{key}_{label}", domain="sensor", platform=DOMAIN,
+                unique_id=f"entry_{key}", disabled_by=reason,
+            )
+            for key in ("iccid", "imsi")
+            for label, reason in (
+                ("integration", RegistryEntryDisabler.INTEGRATION),
+                ("user", RegistryEntryDisabler.USER),
+                ("enabled", None),
+            )
+        ]
+        entities.extend([
+            SimpleNamespace(
+                entity_id=f"sensor.unrelated_{index}", domain=domain, platform=platform,
+                unique_id=unique_id, disabled_by=RegistryEntryDisabler.INTEGRATION,
+            )
+            for index, (domain, platform, unique_id) in enumerate((
+                ("sensor", DOMAIN, "entry_imei"),
+                ("sensor", DOMAIN, "other_iccid"),
+                ("sensor", "other", "entry_iccid"),
+                ("button", DOMAIN, "entry_iccid"),
+            ))
+        ])
+        with (
+            patch("custom_components.insty_ha.er.async_get", return_value=registry),
+            patch("custom_components.insty_ha.er.async_entries_for_config_entry",
+                  return_value=entities) as entries,
+        ):
+            self.assertTrue(await async_migrate_entry(hass, entry))
+        entries.assert_called_once_with(registry, "entry")
+        self.assertEqual(
+            [(call.args, call.kwargs) for call in registry.async_update_entity.call_args_list],
+            [
+                ((f"sensor.{key}_integration",), {"disabled_by": None})
+                for key in ("iccid", "imsi")
+            ],
+        )
+        registry.async_remove.assert_not_called()
+
+    async def test_current_entries_skip_migration_and_future_versions_are_rejected(self):
+        hass = MagicMock()
+        entry = MagicMock()
+        self.assertEqual(InstyConfigFlow.VERSION, 2)
+        with patch("custom_components.insty_ha.er.async_get") as registry:
+            entry.version = 2
+            self.assertTrue(await async_migrate_entry(hass, entry))
+            entry.version = 3
+            with self.assertLogs("custom_components.insty_ha", level="ERROR"):
+                self.assertFalse(await async_migrate_entry(hass, entry))
+        registry.assert_not_called()
+        hass.config_entries.async_update_entry.assert_not_called()
+
+    async def test_setup_does_not_repeat_registry_cleanup(self):
+        hass = MagicMock()
+        hass.data = {}
+        hass.config_entries.async_forward_entry_setups = AsyncMock()
+        entry = MagicMock()
+        entry.entry_id = "entry"
+        entry.data = {"host": "router"}
+        coordinator = MagicMock()
+        coordinator.async_config_entry_first_refresh = AsyncMock()
+        with (
+            patch("custom_components.insty_ha.InstyDataUpdateCoordinator",
+                  return_value=coordinator),
+            patch("custom_components.insty_ha.er.async_get") as registry,
+        ):
+            self.assertTrue(await async_setup_integration(hass, entry))
+        registry.assert_not_called()
+        coordinator.async_config_entry_first_refresh.assert_awaited_once_with()
+        hass.config_entries.async_forward_entry_setups.assert_awaited_once()
+        self.assertIs(hass.data[DOMAIN]["entry"], coordinator)

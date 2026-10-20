@@ -56,7 +56,7 @@ SIGNAL = {
 
 
 class NormalizeSignalTests(unittest.TestCase):
-    def test_native_fields_and_legacy_ids(self):
+    def test_native_fields_without_legacy_duplicates(self):
         result = normalize_signal(SIGNAL)
         self.assertEqual(result["signal_percent"], 36)
         self.assertEqual(result["lte_rsrp"], -109)
@@ -64,12 +64,20 @@ class NormalizeSignalTests(unittest.TestCase):
         self.assertEqual(result["lte_pci"], 0)
         self.assertIsNone(result["nr5g_rsrp"])
         self.assertEqual(result["bands_primary_0_band_name"], "B12")
-        self.assertEqual(result["cops"], "Test Network")
-        self.assertEqual(result["slot"], 1)
-        self.assertEqual(result["rssi"], -75)
-        self.assertEqual(result["lband"], "B2<br>B12")
+        self.assertEqual(result["provider"], "Test Network")
+        self.assertEqual(result["sim_slot"], 1)
+        self.assertEqual(result["lte_rssi"], -75)
+        for key in ("cops", "slot", "rssi"):
+            self.assertNotIn(key, result)
+        self.assertEqual(result["connected_bands"], ["B2", "B12"])
+        self.assertEqual(result["connected_band_count"], 2)
+        self.assertNotIn("lband", result)
         self.assertNotIn("per", result)
         self.assertNotIn("csq", result)
+
+    def test_unknown_payload_fields_are_not_filtered(self):
+        signal = {**SIGNAL, "future_status": "ready"}
+        self.assertEqual(normalize_signal(signal)["future_status"], "ready")
 
     def test_5g_and_secondary_bands_are_deduplicated(self):
         signal = deepcopy(SIGNAL)
@@ -81,14 +89,16 @@ class NormalizeSignalTests(unittest.TestCase):
         signal["bands"]["nr5g_secondary"] = [{"band": 78}]
         result = normalize_signal(signal)
         self.assertEqual(result["nr5g_rsrp"], -95)
-        self.assertEqual(result["lband"], "B2<br>N77<br>B12<br>B66<br>N78")
+        self.assertEqual(result["connected_bands"], ["B2", "N77", "B12", "B66", "N78"])
+        self.assertEqual(result["connected_band_count"], 5)
 
     def test_no_service_preserves_nulls_and_zero(self):
         signal = deepcopy(SIGNAL)
         signal.update(signal_percent=0, lte=None, nr5g=None, bands={})
         result = normalize_signal(signal)
         self.assertEqual(result["signal_percent"], 0)
-        self.assertEqual(result["lband"], "")
+        self.assertEqual(result["connected_bands"], [])
+        self.assertEqual(result["connected_band_count"], 0)
         self.assertNotIn("rssi", result)
 
     def test_invalid_shapes_are_rejected(self):
@@ -143,7 +153,10 @@ class FetchSignalTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(
             await async_fetch_signal(session, "router"),
-            {"mode": "LTE", "signal_percent": 0, "lband": ""},
+            {
+                "mode": "LTE", "signal_percent": 0,
+                "connected_bands": [], "connected_band_count": 0,
+            },
         )
 
     async def test_invalid_streams_are_rejected_and_closed(self):

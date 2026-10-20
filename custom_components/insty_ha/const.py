@@ -26,7 +26,6 @@ STANDBY_STATES = {
 
 # Configuration keys.
 CONF_HOST = "host"
-CONF_SCAN_INTERVAL = "scan_interval"
 
 # Polling.
 DEFAULT_SCAN_INTERVAL = timedelta(seconds=30)

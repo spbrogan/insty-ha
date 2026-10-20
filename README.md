@@ -44,8 +44,10 @@ and exposes every value in each signal update as a Home Assistant sensor.
    leading zeros in identifiers. APN is the currently applied APN, not a saved
    profile setting. The existing ICCID sensor keeps its ID and prefers the signal
    stream value, using the update page only when that value is missing or empty.
-   IMEI and APN are diagnostic sensors. ICCID and IMSI retain their existing
-   disabled-by-default setting; enable them in the device's entity list if needed.
+   IMEI and APN are diagnostic sensors. All sensors are enabled by default.
+   During the one-time upgrade to config entry version 2, ICCID and IMSI entities
+   previously disabled by the integration are enabled automatically; manually
+   disabled entities stay disabled.
    Empty table values are unknown. Request or page-format failures are logged and
    make page-only values unavailable without interrupting signal sensors. Sensors
    are added automatically after the first successful read; no update or other
@@ -82,15 +84,31 @@ No speed tests are run or scheduled by this integration.
 
 ### Upgrading from the old API
 
-Existing configurations do not need to be recreated. The `mode` and `iccid`
-sensor IDs are unchanged. Compatibility keys retain the existing operator
-(`cops`), SIM slot (`slot`), LTE RSSI (`rssi`), and connected band count
-(`lband`) sensors. The band count includes unique active LTE/5G bands and
-primary/secondary bands, with the names available in its `bands` attribute.
+Existing configurations do not need to be recreated. Duplicate compatibility
+sensors have been removed:
 
-Other legacy fields that the new API no longer supplies remain unavailable.
-In particular, signal percentage is **not** mapped to the old packet error
-rate (`per`) or CSQ sensors; update dashboards to use Signal Quality instead.
+| Removed sensor key | Replacement sensor key | Name |
+| --- | --- | --- |
+| `slot` | `sim_slot` | SIM Slot |
+| `cops` | `provider` | Provider |
+| `rssi` | `lte_rssi` | LTE RSSI |
+| `lband` | `connected_band_count` | Connected Band Count |
+
+Reloading the integration or restarting Home Assistant runs a one-time migration
+to config entry version 2, removing these old sensor entries from this
+integration's entity registry. Normal setup and polling contain no legacy key
+filtering or repeated registry cleanup.
+Update dashboards and automations referencing the removed entities to use
+their replacements; entity names customized in Home Assistant may differ.
+The `mode` and `iccid` sensor IDs are unchanged. Connected Band Count includes
+unique active LTE/5G bands and primary/secondary bands, with the names available
+as a list in its `bands` attribute. No service is represented by a count of zero
+and an empty list, not an HTML-formatted string.
+
+The migration also removes obsolete CSQ, packet error rate, RSCP, Ec/Io, tower
+quality, LIM server, RNC number, IMSI name, and Initial Run entities. Their
+definitions are no longer part of the integration. Signal percentage is **not**
+mapped to packet error rate or CSQ; use Signal Quality instead.
 Firmware exposing only the old `getcsq?getcsq` endpoint is not supported by
 this version.
 

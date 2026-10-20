@@ -173,10 +173,7 @@ class ModemDetailsSensorTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(sensor.name, key.upper())
             self.assertIsNone(sensor.entity_description.state_class)
             self.assertIsNone(sensor.entity_description.native_unit_of_measurement)
-            self.assertEqual(
-                sensor.entity_description.entity_registry_enabled_default,
-                key not in ("iccid", "imsi"),
-            )
+            self.assertTrue(sensor.entity_description.entity_registry_enabled_default)
             if key in ("imei", "apn"):
                 self.assertEqual(sensor.entity_description.entity_category, EntityCategory.DIAGNOSTIC)
             self.assertTrue(sensor.available)

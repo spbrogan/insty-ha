@@ -170,7 +170,7 @@ def flatten_json(data: Any, parent_key: str = "") -> dict[str, Any]:
 
 
 def normalize_signal(payload: Any) -> dict[str, Any]:
-    """Expose stream fields and retain legacy sensor keys with direct equivalents."""
+    """Expose current stream fields and a unique connected-band summary."""
     if not isinstance(payload, dict) or not {"mode", "signal_percent"} <= payload.keys():
         raise ValueError("Signal update must be an object with mode and signal_percent")
 
@@ -205,10 +205,8 @@ def normalize_signal(payload: Any) -> dict[str, Any]:
                 add_band(band, prefix)
 
     data = flatten_json(payload)
-    for old_key, new_key in (("cops", "provider"), ("slot", "sim_slot"), ("rssi", "lte_rssi")):
-        if new_key in data:
-            data[old_key] = data[new_key]
-    data["lband"] = "<br>".join(band_names)
+    data["connected_bands"] = band_names
+    data["connected_band_count"] = len(band_names)
     return data
 
 

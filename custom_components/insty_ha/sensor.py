@@ -43,19 +43,11 @@ def _to_number(value: Any) -> float | int | None:
 
 
 def _clean_text(value: Any) -> str | None:
-    """Clean a string value, turning HTML ``<br>`` into a comma list."""
+    """Strip whitespace from a text value."""
     if value is None:
         return None
-    text = str(value).replace("<br>", ", ").strip()
+    text = str(value).strip()
     return text or None
-
-
-def _parse_bands(value: Any) -> list[str]:
-    """Split a ``<br>``-separated band string into a clean list."""
-    if value is None:
-        return []
-    normalized = str(value).replace("<br/>", "<br>").replace("<br>", "\n")
-    return [band.strip() for band in normalized.split("\n") if band.strip()]
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -63,7 +55,7 @@ class InstySensorEntityDescription(SensorEntityDescription):
     """Describes an Insty sensor with a value converter."""
 
     value_fn: Callable[[Any], Any] = _clean_text
-    attr_fn: Callable[[Any], dict[str, Any]] | None = None
+    attr_fn: Callable[[dict[str, Any]], dict[str, Any]] | None = None
 
 
 SENSOR_DESCRIPTIONS: dict[str, InstySensorEntityDescription] = {
@@ -135,85 +127,23 @@ SENSOR_DESCRIPTIONS: dict[str, InstySensorEntityDescription] = {
             ("snr_db", "SNR", SIGNAL_STRENGTH_DECIBELS, None),
         )
     },
-    "csq": InstySensorEntityDescription(
-        key="csq",
-        name="Signal Quality (CSQ)",
-        icon="mdi:signal",
-        state_class=SensorStateClass.MEASUREMENT,
-        value_fn=_to_number,
-    ),
-    "per": InstySensorEntityDescription(
-        key="per",
-        name="Packet Error Rate",
-        native_unit_of_measurement=PERCENTAGE,
-        icon="mdi:percent",
-        state_class=SensorStateClass.MEASUREMENT,
-        value_fn=_to_number,
-    ),
-    "rssi": InstySensorEntityDescription(
-        key="rssi",
-        name="RSSI",
-        device_class=SensorDeviceClass.SIGNAL_STRENGTH,
-        native_unit_of_measurement=SIGNAL_STRENGTH_DECIBELS_MILLIWATT,
-        state_class=SensorStateClass.MEASUREMENT,
-        value_fn=_to_number,
-    ),
-    "rscp": InstySensorEntityDescription(
-        key="rscp",
-        name="RSCP",
-        device_class=SensorDeviceClass.SIGNAL_STRENGTH,
-        native_unit_of_measurement=SIGNAL_STRENGTH_DECIBELS_MILLIWATT,
-        state_class=SensorStateClass.MEASUREMENT,
-        value_fn=_to_number,
-    ),
-    "ecio": InstySensorEntityDescription(
-        key="ecio",
-        name="Ec/Io",
-        native_unit_of_measurement=SIGNAL_STRENGTH_DECIBELS,
-        state_class=SensorStateClass.MEASUREMENT,
-        icon="mdi:signal-distance-variant",
-        value_fn=_to_number,
-    ),
-    "qtwr": InstySensorEntityDescription(
-        key="qtwr",
-        name="Tower Quality",
-        icon="mdi:radio-tower",
-        state_class=SensorStateClass.MEASUREMENT,
-        value_fn=_to_number,
-    ),
     "mode": InstySensorEntityDescription(
         key="mode",
         name="Network Mode",
         icon="mdi:access-point-network",
     ),
-    "cops": InstySensorEntityDescription(
-        key="cops",
-        name="Operator",
-        icon="mdi:sim",
-    ),
-    "lband": InstySensorEntityDescription(
-        key="lband",
-        name="Connected Bands",
+    "connected_band_count": InstySensorEntityDescription(
+        key="connected_band_count",
+        name="Connected Band Count",
         icon="mdi:radio-tower",
         state_class=SensorStateClass.MEASUREMENT,
-        value_fn=lambda value: len(_parse_bands(value)),
-        attr_fn=lambda value: {"bands": _parse_bands(value)},
-    ),
-    "limsrv": InstySensorEntityDescription(
-        key="limsrv",
-        name="LIM Server",
-        icon="mdi:server-network",
-    ),
-    "rnc_num": InstySensorEntityDescription(
-        key="rnc_num",
-        name="RNC Number",
-        icon="mdi:identifier",
+        value_fn=_to_number,
+        attr_fn=lambda data: {"bands": data.get("connected_bands", [])},
     ),
     "imsi": InstySensorEntityDescription(
         key="imsi",
         name="IMSI",
         icon="mdi:card-account-details",
-        entity_registry_enabled_default=False,
     ),
     "imei": InstySensorEntityDescription(
         key="imei",
@@ -227,27 +157,10 @@ SENSOR_DESCRIPTIONS: dict[str, InstySensorEntityDescription] = {
         icon="mdi:access-point-network",
         entity_category=EntityCategory.DIAGNOSTIC,
     ),
-    "imsiname": InstySensorEntityDescription(
-        key="imsiname",
-        name="IMSI Name",
-        icon="mdi:card-account-details-outline",
-    ),
     "iccid": InstySensorEntityDescription(
         key="iccid",
         name="ICCID",
         icon="mdi:sim",
-        entity_registry_enabled_default=False,
-    ),
-    "slot": InstySensorEntityDescription(
-        key="slot",
-        name="SIM Slot",
-        icon="mdi:sim-outline",
-    ),
-    "initial_run": InstySensorEntityDescription(
-        key="initial_run",
-        name="Initial Run",
-        icon="mdi:flag",
-        entity_registry_enabled_default=False,
     ),
 }
 
@@ -265,7 +178,9 @@ async def async_setup_entry(
     @callback
     def _add_new_sensors() -> None:
         """Create sensors for any keys not seen before."""
-        new_keys = set(coordinator.data or {}) - known_keys - {"modem_reachable"}
+        new_keys = set(coordinator.data or {}) - known_keys - {
+            "modem_reachable", "connected_bands",
+        }
         if not new_keys:
             return
         known_keys.update(new_keys)
@@ -318,8 +233,7 @@ class InstySensor(CoordinatorEntity[InstyDataUpdateCoordinator], SensorEntity):
         """Return extra attributes (e.g. the parsed band list)."""
         if self.entity_description.attr_fn is None:
             return None
-        raw = (self.coordinator.data or {}).get(self._key)
-        return self.entity_description.attr_fn(raw)
+        return self.entity_description.attr_fn(self.coordinator.data or {})
 
     @property
     def available(self) -> bool:

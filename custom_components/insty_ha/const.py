@@ -6,9 +6,10 @@ from datetime import timedelta
 
 DOMAIN = "insty_ha"
 
-# Default router connection details (from data.py).
+# Default router connection details.
 DEFAULT_HOST = "192.168.225.1"
-API_ENDPOINT = "/cgi-bin/insty/getcsq?getcsq"
+API_ENDPOINT = "/cgi-bin/insty/signal_stream"
+VERSION_ENDPOINT = "/cgi-bin/insty/getcsq?version"
 
 # Configuration keys.
 CONF_HOST = "host"

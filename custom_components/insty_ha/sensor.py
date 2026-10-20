@@ -14,6 +14,7 @@ from homeassistant.components.sensor import (
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
+    EntityCategory,
     PERCENTAGE,
     SIGNAL_STRENGTH_DECIBELS,
     SIGNAL_STRENGTH_DECIBELS_MILLIWATT,
@@ -66,6 +67,62 @@ class InstySensorEntityDescription(SensorEntityDescription):
 
 
 SENSOR_DESCRIPTIONS: dict[str, InstySensorEntityDescription] = {
+    "firmware_version": InstySensorEntityDescription(
+        key="firmware_version",
+        name="OnChip Firmware Version",
+        icon="mdi:chip",
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    "signal_percent": InstySensorEntityDescription(
+        key="signal_percent",
+        name="Signal Quality",
+        native_unit_of_measurement=PERCENTAGE,
+        icon="mdi:signal",
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=_to_number,
+    ),
+    "provider": InstySensorEntityDescription(
+        key="provider",
+        name="Provider",
+        icon="mdi:sim",
+    ),
+    "reg_status": InstySensorEntityDescription(
+        key="reg_status",
+        name="Registration Status",
+        icon="mdi:access-point-network",
+    ),
+    "sim_slot": InstySensorEntityDescription(
+        key="sim_slot",
+        name="SIM Slot",
+        icon="mdi:sim-outline",
+    ),
+    **{
+        f"{radio}_{metric}": InstySensorEntityDescription(
+            key=f"{radio}_{metric}",
+            name=f"{label} {name}",
+            native_unit_of_measurement=unit,
+            device_class=device_class,
+            state_class=SensorStateClass.MEASUREMENT,
+            value_fn=_to_number,
+        )
+        for radio, label in (("lte", "LTE"), ("nr5g", "5G"))
+        for metric, name, unit, device_class in (
+            (
+                "rssi",
+                "RSSI",
+                SIGNAL_STRENGTH_DECIBELS_MILLIWATT,
+                SensorDeviceClass.SIGNAL_STRENGTH,
+            ),
+            (
+                "rsrp",
+                "RSRP",
+                SIGNAL_STRENGTH_DECIBELS_MILLIWATT,
+                SensorDeviceClass.SIGNAL_STRENGTH,
+            ),
+            ("rsrq", "RSRQ", SIGNAL_STRENGTH_DECIBELS, None),
+            ("snr_db", "SNR", SIGNAL_STRENGTH_DECIBELS, None),
+        )
+    },
     "csq": InstySensorEntityDescription(
         key="csq",
         name="Signal Quality (CSQ)",

@@ -5,13 +5,13 @@ from __future__ import annotations
 from typing import Any
 
 import aiohttp
-import async_timeout
 import voluptuous as vol
 
 from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
-from .const import API_ENDPOINT, CONF_HOST, DEFAULT_HOST, DEFAULT_TIMEOUT, DOMAIN
+from .api import async_fetch_signal
+from .const import CONF_HOST, DEFAULT_HOST, DOMAIN
 
 
 class InstyConfigFlow(ConfigFlow, domain=DOMAIN):
@@ -48,13 +48,9 @@ class InstyConfigFlow(ConfigFlow, domain=DOMAIN):
     async def _async_test_connection(self, host: str) -> str | None:
         """Return an error string if the router cannot be reached, else None."""
         session = async_get_clientsession(self.hass)
-        url = f"http://{host}{API_ENDPOINT}"
         try:
-            async with async_timeout.timeout(DEFAULT_TIMEOUT):
-                response = await session.get(url)
-                response.raise_for_status()
-                await response.json(content_type=None)
-        except aiohttp.ClientError:
+            await async_fetch_signal(session, host)
+        except (aiohttp.ClientError, TimeoutError):
             return "cannot_connect"
         except ValueError:
             return "invalid_response"

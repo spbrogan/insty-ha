@@ -11,7 +11,7 @@
     },
     "error": {
       "cannot_connect": "Failed to connect to the router.",
-      "invalid_response": "The router did not return valid JSON."
+      "invalid_response": "The router did not return a valid signal update stream."
     },
     "abort": {
       "already_configured": "This router is already configured."

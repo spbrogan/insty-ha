@@ -1,20 +1,48 @@
 # Insty Router — Home Assistant Integration
 
 A simple Home Assistant custom integration that polls an Insty Connect
-router, reads the JSON response from its unathenticated API endpoint,
-and exposes every value in that response as a Home Assistant sensor.
+router, reads its unauthenticated local signal event stream,
+and exposes every value in each signal update as a Home Assistant sensor.
 
 - **Router IP (default):** `192.168.225.1`
-- **API endpoint:** `/cgi-bin/insty/getcsq?getcsq`
+- **API endpoint:** `/cgi-bin/insty/signal_stream`
+- **OnChip version endpoint:** `/cgi-bin/insty/getcsq?version`
 
 ## How it works
 
 1. On setup, you enter the router's IP address (pre-filled with the default).
-2. A `DataUpdateCoordinator` polls `http://<host>/cgi-bin/insty/getcsq?getcsq`
-   every 30 seconds.
-3. The JSON response is flattened (nested keys joined with `_`), and one
+2. A `DataUpdateCoordinator` connects to
+   `http://<host>/cgi-bin/insty/signal_stream` every 30 seconds. It reads the
+   first complete `event: update` server-sent event (SSE), parses its JSON
+   `data`, and closes the connection. Setup uses the same reader to validate
+   the router. Requests time out after 10 seconds.
+3. The signal update is flattened (nested keys joined with `_`), and one
    sensor is created per value. New keys that appear later are added
    automatically.
+4. Signal quality (`signal_percent`) is a percentage. LTE and 5G RSSI/RSRP
+   sensors use dBm; RSRQ and SNR use dB. Registration status, provider, SIM
+   slot, ICCID, and individual primary/secondary band fields are also exposed.
+   Missing radio measurements remain unknown rather than becoming zero.
+5. The **OnChip Firmware Version** diagnostic sensor (`firmware_version`) reads
+   the separate version endpoint every polling cycle. Its state is the version
+   string shown by the dashboard (for example, `20260729`), not necessarily the
+   router's underlying OS version. If this request fails, a warning is logged
+   and only this sensor becomes unavailable; signal sensors continue updating.
+   The sensor is created automatically after the first successful version read.
+
+### Upgrading from the old API
+
+Existing configurations do not need to be recreated. The `mode` and `iccid`
+sensor IDs are unchanged. Compatibility keys retain the existing operator
+(`cops`), SIM slot (`slot`), LTE RSSI (`rssi`), and connected band count
+(`lband`) sensors. The band count includes unique active LTE/5G bands and
+primary/secondary bands, with the names available in its `bands` attribute.
+
+Other legacy fields that the new API no longer supplies remain unavailable.
+In particular, signal percentage is **not** mapped to the old packet error
+rate (`per`) or CSQ sensors; update dashboards to use Signal Quality instead.
+Firmware exposing only the old `getcsq?getcsq` endpoint is not supported by
+this version.
 
 ## Installation
 
@@ -48,5 +76,19 @@ and exposes every value in that response as a Home Assistant sensor.
 ## Notes
 
 - The integration uses local polling only — no cloud access.
-- If your firmware returns a different endpoint or requires authentication,
-  update `API_ENDPOINT` in `const.py` and add auth to `coordinator.py`.
+- The router must expose the `signal_stream` SSE endpoint used by the updated
+  InstyConnect dashboard. Authentication is not currently supported.
+- Stream, HTTP, timeout, and malformed-data errors are reported during setup
+  or make sensors unavailable until the next successful poll.
+
+## Tests
+
+On Linux with Python 3.14.2 or newer and Home Assistant's dependencies installed:
+
+```sh
+python -m pip install --upgrade homeassistant pytest
+python -m pytest tests -q
+```
+
+Tests use synthetic signal data and a local HTTP stream, not a physical router.
+Last verified with Home Assistant 2026.10.2 and Python 3.14.8.
